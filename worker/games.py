@@ -711,7 +711,7 @@ def setup_engine(
             shutil.move("stockfish" + EXE_SUFFIX, destination)
     finally:
         os.chdir(worker_dir)
-        shutil.rmtree(tmp_dir)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def kill_process(p):
