@@ -12,10 +12,13 @@ import textwrap
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from numbers import Real
 
-import fishtest.stats.stat_util
 from bson.binary import Binary
 from bson.objectid import ObjectId
+from pymongo import DESCENDING, MongoClient
+
+import fishtest.stats.stat_util
 from fishtest.actiondb import ActionDb
 from fishtest.stats.stat_util import SPRT_elo
 from fishtest.userdb import UserDb
@@ -33,14 +36,200 @@ from fishtest.util import (
     update_residuals,
     worker_name,
 )
+from fishtest.validate import ip_address, regex, union, url, validate
 from fishtest.workerdb import WorkerDb
-from pymongo import DESCENDING, MongoClient
 
 DEBUG = False
 
 boot_time = datetime.now(timezone.utc)
 
 last_rundb = None
+
+# Some allowances have been made for old tests with different fields, but it is not clear
+# if this schema will match all old tests.
+
+net_name = regex("nn-[a-z0-9]{12}.nnue", name="net_name")
+tc = regex(r"^([1-9]\d*/)?\d+(\.\d+)?(\+\d+(\.\d+)?)?$", name="tc")
+str_int = regex(r"[1-9]\d*", name="str_int")
+sha = regex(r"[a-f0-9]{40}", name="sha")
+country_code = regex(r"[A-Z][A-Z]", name="country_code")
+run_id = regex(r"[a-f0-9]{24}", name="run_id")
+
+worker_info_schema = {
+    "uname": str,
+    "architecture": [str, str],
+    "concurrency": int,
+    "max_memory": int,
+    "min_threads": int,
+    "username": str,
+    "version": int,
+    "python_version": [int, int, int],
+    "gcc_version": [int, int, int],
+    "compiler": union("clang++", "g++"),
+    "unique_key": str,
+    "modified": bool,
+    "ARCH": str,
+    "nps": Real,
+    "near_github_api_limit": bool,
+    "remote_addr": ip_address,
+    "country_code": union(country_code, "?"),
+}
+
+results_schema = {
+    "wins": int,
+    "losses": int,
+    "draws": int,
+    "crashes": int,
+    "time_losses": int,
+    "pentanomial": [int, int, int, int, int],
+}
+
+schema = {
+    "_id?": ObjectId,
+    "start_time": datetime,
+    "last_updated": datetime,
+    "tc_base": Real,
+    "base_same_as_master": bool,
+    "results_stale?": bool,
+    "rescheduled_from?": run_id,
+    "approved": bool,
+    "approver": str,
+    "finished": bool,
+    "deleted": bool,
+    "failed": bool,
+    "is_green": bool,
+    "is_yellow": bool,
+    "workers?": int,
+    "cores?": int,
+    "results": results_schema,
+    "results_info?": {
+        "style": str,
+        "info": [str, ...],
+    },
+    "args": {
+        "base_tag": str,
+        "new_tag": str,
+        "base_net": net_name,
+        "new_net": net_name,
+        "num_games": int,
+        "tc": tc,
+        "new_tc": tc,
+        "book": str,
+        "book_depth": str_int,
+        "threads": int,
+        "resolved_base": sha,
+        "resolved_new": sha,
+        "msg_base": str,
+        "msg_new": str,
+        "base_options": str,
+        "new_options": str,
+        "info": str,
+        "base_signature": str_int,
+        "new_signature": str_int,
+        "username": str,
+        "tests_repo": url,
+        "auto_purge": bool,
+        "throughput": Real,
+        "itp": Real,
+        "priority": Real,
+        "adjudication": bool,
+        "sprt?": {
+            "alpha": Real,
+            "beta": Real,
+            "elo0": Real,
+            "elo1": Real,
+            "elo_model": union("BayesElo", "logistic", "normalized"),
+            "state": union("", "accepted", "rejected"),
+            "llr": Real,
+            "batch_size": int,
+            "lower_bound": Real,
+            "upper_bound": Real,
+            "lost_samples?": int,
+            "illegal_update?": int,
+            "overshoot?": {
+                "last_update": int,
+                "skipped_updates": int,
+                "ref0": Real,
+                "m0": Real,
+                "sq0": Real,
+                "ref1": Real,
+                "m1": Real,
+                "sq1": Real,
+            },
+        },
+        "spsa?": {
+            "A": Real,
+            "alpha": Real,
+            "gamma": Real,
+            "raw_params": str,
+            "iter": int,
+            "num_iter": int,
+            "params": [
+                {
+                    "name": str,
+                    "start": Real,
+                    "min": Real,
+                    "max": Real,
+                    "c_end": Real,
+                    "r_end": Real,
+                    "c": Real,
+                    "a_end": Real,
+                    "a": Real,
+                    "theta": Real,
+                },
+                ...,
+            ],
+            "param_history?": [
+                [{"theta": Real, "R": Real, "c": Real}, ...],
+                ...,
+            ],
+        },
+    },
+    "tasks": [
+        {
+            "num_games": int,
+            "active": bool,
+            "last_updated": datetime,
+            "start": int,
+            "residual?": Real,
+            "residual_color?": str,
+            "bad?": True,
+            "stats": results_schema,
+            "worker_info": worker_info_schema,
+        },
+        ...,
+    ],
+    "bad_tasks?": [
+        {
+            "num_games": int,
+            "active": False,
+            "last_updated": datetime,
+            "start": int,
+            "residual": Real,
+            "residual_color": str,
+            "bad": True,
+            "task_id": int,
+            "stats": results_schema,
+            "worker_info": worker_info_schema,
+        },
+        ...,
+    ],
+}
+
+# Avoid leaking too many things into the global scope
+del (
+    country_code,
+    ip_address,
+    regex,
+    results_schema,
+    run_id,
+    sha,
+    str_int,
+    tc,
+    union,
+    url,
+    worker_info_schema,
+)
 
 
 def get_port():
@@ -239,6 +428,12 @@ class RunDb:
 
         if rescheduled_from:
             new_run["rescheduled_from"] = rescheduled_from
+
+        valid = validate(schema, new_run, "run", strict=True)
+        if valid != "":
+            message = f"The new run object does not validate: {valid}"
+            print(message, flush=True)
+            raise Exception(message)
 
         return self.runs.insert_one(new_run).inserted_id
 
@@ -609,7 +804,7 @@ class RunDb:
         return [runs_list, count]
 
     def get_results(self, run, save_run=True):
-        if not run["results_stale"]:
+        if not run.get("results_stale", True):
             return run["results"]
 
         results = {"wins": 0, "losses": 0, "draws": 0, "crashes": 0, "time_losses": 0}
@@ -1374,6 +1569,12 @@ After fixing the issues you can unblock the worker at
         elif run["results_info"]["style"] == "yellow":
             run["is_yellow"] = True
         run["finished"] = True
+        valid = validate(schema, run, "run", strict=True)
+        if valid != "":
+            print(f"The run object {run_id} does not validate: {valid}", flush=True)
+            # We are not confident enough to enable this...
+            # assert False
+
         self.buffer(run, True)
         # Publish the results of the run to the Fishcooking forum
         post_in_fishcooking_results(run)
