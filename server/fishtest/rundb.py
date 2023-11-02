@@ -14,11 +14,9 @@ import time
 from datetime import datetime, timedelta, timezone
 from numbers import Real
 
+import fishtest.stats.stat_util
 from bson.binary import Binary
 from bson.objectid import ObjectId
-from pymongo import DESCENDING, MongoClient
-
-import fishtest.stats.stat_util
 from fishtest.actiondb import ActionDb
 from fishtest.stats.stat_util import SPRT_elo
 from fishtest.userdb import UserDb
@@ -38,6 +36,7 @@ from fishtest.util import (
 )
 from fishtest.validate import ip_address, regex, union, url, validate
 from fishtest.workerdb import WorkerDb
+from pymongo import DESCENDING, MongoClient
 
 DEBUG = False
 

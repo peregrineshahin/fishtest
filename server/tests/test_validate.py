@@ -13,7 +13,6 @@ from fishtest.validate import (
     validate,
 )
 
-
 DEBUG = False
 
 
