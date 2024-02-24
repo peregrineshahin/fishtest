@@ -56,7 +56,6 @@ str_int = regex(r"[1-9]\d*", name="str_int")
 sha = regex(r"[a-f0-9]{40}", name="sha")
 country_code = regex(r"[A-Z][A-Z]", name="country_code")
 run_id = regex(r"[a-f0-9]{24}", name="run_id")
-uuid = regex(r"[0-9a-zA-Z]{2,8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}", name="uuid")
 
 worker_info_schema = {
     "uname": str,
@@ -69,7 +68,7 @@ worker_info_schema = {
     "python_version": [int, int, int],
     "gcc_version": [int, int, int],
     "compiler": union("clang++", "g++"),
-    "unique_key": uuid,
+    "unique_key": str,
     "modified": bool,
     "ARCH": str,
     "nps": number,
@@ -231,7 +230,6 @@ del (
     tc,
     union,
     url,
-    uuid,
     worker_info_schema,
 )
 
@@ -688,11 +686,9 @@ class RunDb:
         machines = (
             task["worker_info"]
             | {
-                "last_updated": (
-                    task["last_updated"].replace(tzinfo=timezone.utc)
-                    if task.get("last_updated")
-                    else None
-                ),
+                "last_updated": task["last_updated"].replace(tzinfo=timezone.utc)
+                if task.get("last_updated")
+                else None,
                 "run": run,
                 "task_id": task_id,
             }
@@ -1584,11 +1580,9 @@ After fixing the issues you can unblock the worker at
             self.actiondb.purge_run(
                 username=run["args"]["username"],
                 run=run,
-                message=(
-                    f"Auto purge (not performed): {message}"
-                    if message
-                    else "Auto purge"
-                ),
+                message=f"Auto purge (not performed): {message}"
+                if message
+                else "Auto purge",
             )
             if message == "":
                 print("Run {} was auto-purged".format(str(run_id)), flush=True)
@@ -1772,7 +1766,9 @@ After fixing the issues you can unblock the worker at
                 {
                     "name": param["name"],
                     "value": self.spsa_param_clip(param, c * flip),
-                    "R": param["a"] / (spsa["A"] + iter_local) ** spsa["alpha"] / c**2,
+                    "R": param["a"]
+                    / (spsa["A"] + iter_local) ** spsa["alpha"]
+                    / c**2,
                     "c": c,
                     "flip": flip,
                 }

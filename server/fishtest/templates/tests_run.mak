@@ -27,7 +27,7 @@
 %>
 
 <script>
-  document.title = "Create New Test | Stockfish Testing";
+  document.title = 'Create New Test | Stockfish Testing';
 </script>
 
 <header style="text-align: center; padding-top: 7px">
@@ -684,33 +684,33 @@
 </form>
 
 <script>
-  let submitted = false;
+  let form_submitted = false;
   window.addEventListener("pageshow", () => {
-    // make sure submitted is set back to false
-    submitted = false;
+    // make sure form_submitted is set back to false
+    form_submitted = false;
 
     // make sure the submit test button is enabled again and has the correct text.
     document.getElementById('submit-test').disabled = false;
     document.getElementById('submit-test').textContent = 'Submit test';
 
     // Also make sure that the fields have the right visibility.
-    updateOdds(document.getElementById('checkbox-time-odds'));
-    toggleBook(document.getElementById('checkbox-book-visibility'));
+    update_odds(document.getElementById('checkbox-time-odds'));
+    update_book_visibility(document.getElementById('checkbox-book-visibility'));
   });
 
   let stopRule = null;
 
-  const presetBounds = {
+  const preset_bounds = {
     'standard STC': [ 0.0, 2.0],
     'standard LTC': [ 0.5, 2.5],
     'regression STC': [-1.75, 0.25],
     'regression LTC': [-1.75, 0.25],
   };
 
-  const isRun = ${'true' if is_rerun else 'false'};
+  const is_rerun = ${'true' if is_rerun else 'false'};
 
-  function updateSprtBounds(selectedBounds) {
-    if (selectedBounds === "custom") {
+  function update_sprt_bounds(selected_bounds_name) {
+    if (selected_bounds_name === "custom") {
       document
         .querySelectorAll(".custom-bounds")
         .forEach((bound) => (bound.style.display = ""));
@@ -718,13 +718,13 @@
       document
         .querySelectorAll(".custom-bounds")
         .forEach((bound) => (bound.style.display = "none"));
-      const bounds = presetBounds[selectedBounds];
+      const bounds = preset_bounds[selected_bounds_name];
       document.getElementById("sprt_elo0").value = bounds[0];
       document.getElementById("sprt_elo1").value = bounds[1];
     }
   }
 
-  function toggleBookDepth(book) {
+  function update_book_depth_visibility(book) {
     if (book.match('\\.pgn$')) {
       document.querySelector('.book-depth').style.display = "";
     } else {
@@ -735,19 +735,19 @@
   document
     .getElementById("bounds")
     .addEventListener("change", (e) => {
-      updateSprtBounds(e.target.value);
+      update_sprt_bounds(e.target.value);
     });
 
-  let initialBaseBranch = document.getElementById("base-branch").value;
-  let initialBaseSignature = document.getElementById("base-signature").value;
-  let spsa = false;
+  let initial_base_branch = document.getElementById("base-branch").value;
+  let initial_base_signature = document.getElementById("base-signature").value;
+  let spsa_do_not_save = false;
 
   // Test type is changed
   document.querySelectorAll("[name=test-type]").forEach((btn) =>
     btn.addEventListener("click", (e) => {
-      if (!spsa) {
-        initialBaseBranch = document.getElementById("base-branch").value;
-        initialBaseSignature = document.getElementById("base-signature").value;
+      if (!spsa_do_not_save) {
+        initial_base_branch = document.getElementById("base-branch").value;
+        initial_base_signature = document.getElementById("base-signature").value;
       }
       const btn = e.target;
 
@@ -790,23 +790,23 @@
         ).replace(/ $/, "");
 
         document.getElementById("book").value = book;
-        toggleBookDepth(book);
+        update_book_depth_visibility(book);
 
         document.getElementById("checkbox-book-visibility").checked = (book != "${test_book}");
-        toggleBook(document.getElementById("checkbox-book-visibility"));
+        update_book_visibility(document.getElementById("checkbox-book-visibility"));
 
         document.getElementById(stop_rule).click();
 
         if (bounds) {
           document.getElementById("bounds").value = bounds;
-          updateSprtBounds(bounds);
+          update_sprt_bounds(bounds);
         }
 
         if (games) {
           document.getElementById("num-games").value = games;
         }
 
-        if (!isRun) {
+        if (!is_rerun) {
           if (test_branch) {
             document.getElementById("test-branch").value = test_branch;
           }
@@ -824,7 +824,7 @@
           document.getElementById("run-info").value = info;
         }
 
-        spsaWork();
+        do_spsa_work();
       }
     })
   );
@@ -857,7 +857,7 @@
           .querySelectorAll("." + stopRule)
           .forEach((el) => (el.style.display = ""));
 
-        if (!isRun) {
+        if (!is_rerun) {
           if (stopRule === "stop-rule-spsa") {
             // base branch and test branch should be the same for SPSA tests
             document.getElementById("base-branch").readOnly = true;
@@ -870,38 +870,38 @@
             document
               .getElementById("test-signature")
               .addEventListener("input", testSignatureHandler);
-            spsa = true;
+            spsa_do_not_save = true;
           } else {
             document.getElementById("base-branch").removeAttribute("readonly");
-            document.getElementById("base-branch").value = initialBaseBranch;
+            document.getElementById("base-branch").value = initial_base_branch;
             document.getElementById("base-signature").removeAttribute("readonly");
-            document.getElementById("base-signature").value = initialBaseSignature;
+            document.getElementById("base-signature").value = initial_base_signature;
             document
               .getElementById("test-branch")
               .removeEventListener("input", testBranchHandler);
             document
               .getElementById("test-signature")
               .removeEventListener("input", testSignatureHandler);
-            spsa = false;
+            spsa_do_not_save = false;
           }
         }
         if (stopRule === "stop-rule-sprt") {
-          updateSprtBounds(document.getElementById("bounds").value);
+          update_sprt_bounds(document.getElementById("bounds").value);
         }
       }
     })
   );
 
   // Only .pgn book types have a book_depth field
-  toggleBookDepth(document.getElementById("book").value);
+  update_book_depth_visibility(document.getElementById("book").value);
   document.getElementById("book").addEventListener("input", (e) => {
-    toggleBookDepth(e.target.value);
+    update_book_depth_visibility(e.target.value);
   });
 
   document
     .getElementById("create-new-test")
     .addEventListener("submit", function (e) {
-      const ret = spsaWork(); // Last check that all spsa data are consistent.
+      const ret = do_spsa_work(); // Last check that all spsa data are consistent.
       if (!ret) {
         return false;
       }
@@ -909,12 +909,12 @@
       if (supportsNotifications() && Notification.permission === "default") {
         Notification.requestPermission();
       }
-      if (submitted) {
+      if (form_submitted) {
         // Don't allow submitting the form more than once
         e.preventDefault();
         return;
       }
-      submitted = true;
+      form_submitted = true;
       const submitButton = document.getElementById("submit-test");
       submitButton.setAttribute("disabled","");
       submitButton.replaceChildren();
@@ -925,7 +925,7 @@
     });
 
   // If the test is a reschedule
-  if (isRun) {
+  if (is_rerun) {
     // Select the correct fields by default for re-runs
     const tc = '${args.get('tc')}';
     if (tc === "10+0.1") {
@@ -957,7 +957,7 @@
     document.getElementById('test-branch').focus();
   }
 
-  function updateOdds(checkbox) {
+  function update_odds(checkbox) {
     if (checkbox.checked) {
       document.querySelector('.new_tc').style.display = "";
       document.querySelector('[for=tc]').textContent = "Base TC";
@@ -969,52 +969,50 @@
   }
 
   document.getElementById('checkbox-time-odds').addEventListener("change", (e) => {
-    updateOdds(e.target);
+    update_odds(e.target);
   });
 
-  function toggleBook(checkbox) {
+  function update_book_visibility(checkbox) {
     if (checkbox.checked) {
       document.getElementById('test-book').style.display = "";
     } else {
       document.getElementById('test-book').style.display = "none";
       document.getElementById('book').value = "${test_book}";
-      toggleBookDepth(document.getElementById('book').value);
+      update_book_depth_visibility(document.getElementById('book').value);
     }
   }
 
   document.getElementById('checkbox-book-visibility').addEventListener("change", (e) => {
-    toggleBook(e.target);
+    update_book_visibility(e.target);
   });
 </script>
 
-<script
-  src="/js/spsa_new.js?5&?v=${cache_busters['js/spsa_new.js']}"
-  integrity="sha384-${cache_busters['js/spsa_new.js']}"
-  crossorigin="anonymous"
-></script>
+<script src="/js/spsa_new.js?5&?v=${cache_busters['js/spsa_new.js']}"
+        integrity="sha384-${cache_busters['js/spsa_new.js']}"
+        crossorigin="anonymous"></script>
 
 <script>
-  function spsaWork() {
+  function do_spsa_work() {
     /* parsing/computing */
     if (!document.getElementById('autoselect').checked) {
       return true;
     }
     const params = document.getElementById('spsa_raw_params').value;
-    let s = fishtestToSpsa(params);
+    let s = fishtest_to_spsa(params);
     if (s === null) {
       alert("Unable to parse spsa parameters.");
       return false;
     }
     /* estimate the draw ratio */
     const tc = document.getElementById('tc').value;
-    const dr = drawRatio(tc);
+    const dr = draw_ratio(tc);
     if (dr === null) {
       alert("Unable to parse time control.");
       return false;
     }
     s.draw_ratio = dr;
-    s = spsaCompute(s);
-    const fs = spsaToFishtest(s);
+    s = spsa_compute(s);
+    const fs = spsa_to_fishtest(s);
     /* Let's go */
     document.getElementById("spsa_A").value = 0;
     document.getElementById("spsa_alpha").value = 0.0;
@@ -1030,7 +1028,7 @@
   let saved_games = null;
   let saved_params = null;
 
-  function spsaEvents() {
+  function do_spsa_events() {
     if (document.getElementById('autoselect')["checked"]) {
       /* save old stuff */
       saved_A = document.getElementById("spsa_A").value;
@@ -1038,7 +1036,7 @@
       saved_gamma = document.getElementById("spsa_gamma").value;
       saved_games = document.getElementById("num-games").value;
       saved_params = document.getElementById("spsa_raw_params").value;
-      const ret = spsaWork();
+      const ret = do_spsa_work();
       if (!ret) {
         document.getElementById('autoselect').checked = false;
       }
@@ -1051,16 +1049,16 @@
     }
   }
 
-  document.getElementById('autoselect').addEventListener("change", spsaEvents);
+  document.getElementById('autoselect').addEventListener("change", do_spsa_events);
 
   document.getElementById('tc').addEventListener("input", (e) => {
     if (!document.getElementById('autoselect').checked) {
       return;
     }
     const tc = e.target.value;
-    const tc_seconds = tcToSeconds(tc);
+    const tc_seconds = tc_to_seconds(tc);
     if (tc_seconds !== null) {
-      spsaWork();
+      do_spsa_work();
     }
   });
 </script>
