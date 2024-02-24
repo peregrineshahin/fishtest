@@ -231,8 +231,9 @@ def github_api(repo):
     return repo.replace("https://github.com", "https://api.github.com/repos")
 
 
-def required_net(engine):
-    net = None
+def required_nets(engine):
+    nets = {}
+    pattern = re.compile(r"(EvalFile\w*)\s+.*\s+(nn-[a-f0-9]{12}.nnue)")
     print("Obtaining EvalFile of {} ...".format(os.path.basename(engine)))
     try:
         with subprocess.Popen(
@@ -243,10 +244,10 @@ def required_net(engine):
             close_fds=not IS_WINDOWS,
         ) as p:
             for line in iter(p.stdout.readline, ""):
-                if "EvalFile" in line:
-                    m = re.search("nn-[a-f0-9]{12}.nnue", line)
-                    if m:
-                        net = m.group(0)
+                match = pattern.search(line)
+                if match:
+                    nets[match.group(1)] = match.group(2)
+
     except (OSError, subprocess.SubprocessError) as e:
         raise WorkerException(
             "Unable to obtain name for required net. Error: {}".format(str(e))
@@ -257,7 +258,7 @@ def required_net(engine):
             "UCI exited with non-zero code {}".format(format_return_code(p.returncode))
         )
 
-    return net
+    return nets
 
 
 def required_nets_from_source():
@@ -693,7 +694,13 @@ def setup_engine(
         # skip temporary the profiled build for apple silicon, see
         # https://stackoverflow.com/questions/71580631/how-can-i-get-code-coverage-with-clang-13-0-1-on-mac
         make_cmd = "build" if arch == "apple-silicon" else "profile-build"
-        cmd = "make -j {} {} ARCH={} COMP={}".format(concurrency, make_cmd, arch, comp)
+        cmd = [
+            "make",
+            f"-j{concurrency}",
+            f"{make_cmd}",
+            f"ARCH={arch}",
+            f"COMP={comp}",
+        ]
 
         # append -DNNUE_EMBEDDING_OFF to existing CXXFLAGS environment variable, if any
         cxx = os.environ.get("CXXFLAGS", "") + " -DNNUE_EMBEDDING_OFF"
@@ -701,18 +708,15 @@ def setup_engine(
 
         with subprocess.Popen(
             cmd,
-            shell=True,
             env=env,
             start_new_session=False if IS_WINDOWS else True,
-            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True,
             bufsize=1,
             close_fds=not IS_WINDOWS,
         ) as p:
             try:
-                for out in p.stdout:
-                    print(out.strip())
+                errors = p.stderr.readlines()
             except Exception as e:
                 if not IS_WINDOWS:
                     os.killpg(p.pid, signal.SIGINT)
@@ -720,21 +724,14 @@ def setup_engine(
                     f"Executing {cmd} raised Exception: {e.__class__.__name__}: {str(e)}",
                     e=e,
                 )
-            errors = p.stderr.readlines()
         if p.returncode:
             raise WorkerException("Executing {} failed. Error: {}".format(cmd, errors))
 
-        # TODO: 'make strip' works fine with the new Makefile,
-        # 'try' should be safely dropped in the future
-        try:
-            subprocess.run(
-                "make strip COMP={}".format(comp),
-                stderr=subprocess.DEVNULL,
-                shell=True,
-                check=True,
-            )
-        except Exception as e:
-            print("Exception stripping binary:\n", e, sep="", file=sys.stderr)
+        subprocess.run(
+            ["make", "strip", f"COMP={comp}"],
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
 
         # We called setup_engine() because the engine was not cached.
         # Only another worker running in the same folder can have built the engine.
@@ -1122,11 +1119,14 @@ def launch_cutechess(
             bufsize=1,
             # The next options are necessary to be able to send a CTRL_C_EVENT to this process.
             # https://stackoverflow.com/questions/7085604/sending-c-to-python-subprocess-objects-on-windows
-            startupinfo=subprocess.STARTUPINFO(
-                dwFlags=subprocess.STARTF_USESHOWWINDOW, wShowWindow=subprocess.SW_HIDE
-            )
-            if IS_WINDOWS
-            else None,
+            startupinfo=(
+                subprocess.STARTUPINFO(
+                    dwFlags=subprocess.STARTF_USESHOWWINDOW,
+                    wShowWindow=subprocess.SW_HIDE,
+                )
+                if IS_WINDOWS
+                else None
+            ),
             creationflags=subprocess.CREATE_NEW_CONSOLE if IS_WINDOWS else 0,
             close_fds=not IS_WINDOWS,
         ) as p:
@@ -1341,17 +1341,14 @@ def run_games(worker_info, password, remote, run, task_id, pgn_file, clear_binar
                 file=sys.stderr,
             )
 
-    # Add EvalFile with full path to cutechess options, and download the networks if missimg.
-    net_base = required_net(base_engine)
-    if net_base:
-        base_options = base_options + ["option.EvalFile={}".format(net_base)]
-    net_new = required_net(new_engine)
-    if net_new:
-        new_options = new_options + ["option.EvalFile={}".format(net_new)]
+    # Add EvalFile* with full path to cutechess options, and download the networks if missing.
+    for option, net in required_nets(base_engine).items():
+        base_options.append("option.{}={}".format(option, net))
+        establish_validated_net(remote, testing_dir, net)
 
-    for net in (net_base, net_new):
-        if net:
-            establish_validated_net(remote, testing_dir, net)
+    for option, net in required_nets(new_engine).items():
+        new_options.append("option.{}={}".format(option, net))
+        establish_validated_net(remote, testing_dir, net)
 
     # PGN files output setup.
     pgn_name = "results-" + worker_info["unique_key"] + ".pgn"
@@ -1375,7 +1372,7 @@ def run_games(worker_info, password, remote, run, task_id, pgn_file, clear_binar
     )
 
     if base_nps < 231000 / (1 + math.tanh((worker_concurrency - 1) / 8)):
-        raise FatalException(
+        raise WorkerException(
             "This machine is too slow ({} nps / thread) to run fishtest effectively - sorry!".format(
                 base_nps
             )

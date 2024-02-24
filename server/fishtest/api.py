@@ -28,14 +28,14 @@ db directly. However this information may be slightly outdated, depending
 on how frequently the main instance flushes its run cache.
 """
 
-WORKER_VERSION = 225
+WORKER_VERSION = 229
 
 """
 begin api_schema
 """
 
 run_id = regex(r"[a-f0-9]{24}", name="run_id")
-uuid = regex(r"[0-9a-zA-z]{2,8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}", name="uuid")
+uuid = regex(r"[0-9a-zA-Z]{2,8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}", name="uuid")
 
 uint = intersect(int, interval(0, ...))
 suint = intersect(int, interval(1, ...))
