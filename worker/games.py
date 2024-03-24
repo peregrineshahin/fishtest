@@ -1360,26 +1360,43 @@ def run_games(worker_info, password, remote, run, task_id, pgn_file, clear_binar
         pass
 
     # Verify that the signatures are correct.
-    verify_signature(
-        new_engine,
-        run["args"]["new_signature"],
-        games_concurrency * threads,
-    )
-    base_nps, cpu_features = verify_signature(
-        base_engine,
-        run["args"]["base_signature"],
-        games_concurrency * threads,
-    )
+    run_errors = []
+    try:
+        base_nps, cpu_features = verify_signature(
+            base_engine,
+            run["args"]["base_signature"],
+            games_concurrency * threads,
+        )
+    except RunException as e:
+        run_errors.append(str(e))
+    except WorkerException as e:
+        raise e
 
-    if base_nps < 231000 / (1 + math.tanh((worker_concurrency - 1) / 8)):
+    try:
+        verify_signature(
+            new_engine,
+            run["args"]["new_signature"],
+            games_concurrency * threads,
+        )
+    except RunException as e:
+        run_errors.append(str(e))
+    except WorkerException as e:
+        raise e
+
+    # Handle exceptions if any.
+    if run_errors:
+        raise RunException("\n".join(run_errors))
+
+    if base_nps < 208082 / (1 + math.tanh((worker_concurrency - 1) / 8)):
         raise WorkerException(
             "This machine is too slow ({} nps / thread) to run fishtest effectively - sorry!".format(
                 base_nps
             )
         )
-    # 1184000 nps is the reference core benched with respect to SF 11,
+    # fishtest with Stockfish 11 had 1.6 Mnps as reference nps and
+    # 0.7 Mnps as threshold for the slow worker.
     # also set in rundb.py and delta_update_users.py
-    factor = 640000 / base_nps
+    factor = 691680 / base_nps
 
     # Adjust CPU scaling.
     _, tc_limit_ltc = adjust_tc("60+0.6", factor)

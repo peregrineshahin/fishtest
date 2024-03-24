@@ -1,13 +1,16 @@
 import copy
 import hashlib
 import html
+import json
 import os
 import re
 import threading
 import time
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
+import fishtest.stats.LLRcalc
 import fishtest.stats.stat_util
 import requests
 from bson.objectid import ObjectId
@@ -26,6 +29,36 @@ from pyramid.security import forget, remember
 from pyramid.view import forbidden_view_config, view_config
 from requests.exceptions import ConnectionError, HTTPError
 
+
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, float):
+            if obj == float("inf"):
+                return "Infinity"
+            elif obj == float("-inf"):
+                return "-Infinity"
+            elif obj != obj:
+                return "NaN"
+        return super().default(obj)
+
+    def encode(self, obj):
+        def handle_obj(o):
+            if isinstance(o, (list, tuple)):
+                return [handle_obj(item) for item in o]
+            elif isinstance(o, dict):
+                return {key: handle_obj(value) for key, value in o.items()}
+            elif isinstance(o, float):
+                if o == float("inf"):
+                    return "Infinity"
+                elif o == float("-inf"):
+                    return "-Infinity"
+                elif o != o:
+                    return "NaN"
+            return o
+
+        return super().encode(handle_obj(obj))
+
+
 HTTP_TIMEOUT = 15.0
 
 
@@ -41,6 +74,62 @@ def cached_flash(request, requestString, *l):
     clear_cache()
     request.session.flash(requestString, *l)
     return
+
+
+def list_info(run):
+    info = run["results_info"]["info"]
+    l = len(info)
+    elo_ptnml_run = (
+        "sprt" not in run["args"]
+        and "spsa" not in run["args"]
+        and "pentanomial" in run["results"]
+    )
+    result = ""
+    if elo_ptnml_run:
+        results5 = run["results"]["pentanomial"]
+        z975 = fishtest.stats.stat_util.Phi_inv(0.975)
+        nelo5_coeff = 800 / math.log(10) / (2**0.5)
+        N5, pdf5 = fishtest.stats.LLRcalc.results_to_pdf(results5)
+        avg5, var5, skewness5, exkurt5 = fishtest.stats.LLRcalc.stats_ex(pdf5)
+        t5, var_t5 = t_conf(avg5, var5, skewness5, exkurt5)
+        nelo5 = nelo5_coeff * t5
+        nelo5_delta = nelo5_coeff * z975 * (var_t5 / N5) ** 0.5
+
+        results5_pairs_ratio = (
+            sum(results5[3:]) / sum(results5[0:2])
+            if any(results5[0:2])
+            else float("inf") if any(results5[3:]) else float("nan")
+        )
+
+        result += f"nElo: {nelo5:.2f} ± {nelo5_delta:.1f} (95%) PairsRatio: {results5_pairs_ratio:.2f}\n"
+
+    for i in range(l):
+        if elo_ptnml_run and i == 0:
+            result += info[i].replace("ELO", "Elo")
+        else:
+            result += info[i]
+        if i < l - 1:
+            result += "\n"
+
+    return result
+
+
+def t_conf(avg, var, skewness, exkurt):
+    t = (avg - 0.5) / var**0.5
+    var_t = max(1 - t * skewness + 0.25 * t**2 * (exkurt + 2), 0)
+    return t, var_t
+
+
+def process_results_info(obj):
+    if isinstance(obj, dict):
+        if "results_info" in obj and "info" in obj["results_info"]:
+            obj["is_active_sprt_ltc"] = is_active_sprt_ltc(obj)
+            obj["results_info"]["info"] = list_info(obj)
+        for key, value in obj.items():
+            process_results_info(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            process_results_info(item)
 
 
 def pagination(page_idx, num, page_size, query_params):
@@ -949,6 +1038,7 @@ def validate_form(request):
         sprt_batch_size_games = 2 * max(
             1, int(0.5 + 16 / get_tc_ratio(data["tc"], data["threads"]))
         )
+        sprt_batch_size_games = 8
         assert sprt_batch_size_games % 2 == 0
         elo_model = request.POST["elo_model"]
         if elo_model not in ["BayesElo", "logistic", "normalized"]:
@@ -1310,15 +1400,319 @@ def tests_live_elo(request):
     return {"run": run, "page_title": get_page_title(run)}
 
 
-@view_config(route_name="tests_stats", renderer="tests_stats.mak")
+def pdf_to_string(pdf, decimals=(2, 5)):
+    return "{" + ", ".join(f"{value:.{decimals[0]}f}: {prob:.{decimals[1]}f}" for value, prob in pdf) + "}"
+
+def list_to_string(l, decimals=6):
+    return "[" + ", ".join(f"{value:.{decimals}f}" for value in l) + "]"
+
+def t_conf(avg, var, skewness, exkurt):
+    t = (avg - 0.5) / var ** 0.5
+    # limit for rounding error
+    var_t = max(1 - t * skewness + 0.25 * t ** 2 * (exkurt + 2), 0)
+    return t, var_t
+
+@view_config(route_name="api_tests_stats", renderer="json")
 def tests_stats(request):
     run = request.rundb.get_run(request.matchdict["id"])
     if run is None:
         raise exception_response(404)
-    return {"run": run, "page_title": get_page_title(run)}
 
+    z975 = fishtest.stats.stat_util.Phi_inv(0.975)
+    nelo_divided_by_nt = 800 / math.log(10)  ## 347.43558552260146
 
-@view_config(route_name="tests_tasks", renderer="tasks.mak")
+    has_sprt = "sprt" in run["args"]
+    has_pentanomial = "pentanomial" in run["results"]
+    has_spsa = "spsa" in run["args"]
+
+    results3 = [run["results"]["losses"], run["results"]["draws"], run["results"]["wins"]]
+    results3_ = fishtest.stats.LLRcalc.regularize(results3)
+    draw_ratio = results3_[1] / float(sum(results3_))
+    N3, pdf3 = fishtest.stats.LLRcalc.results_to_pdf(results3)
+    games3 = N3
+    avg3, var3, skewness3, exkurt3 = fishtest.stats.LLRcalc.stats_ex(pdf3)
+    stdev3 = var3 ** 0.5
+    games = games3
+    sigma = stdev3
+    pdf3_s = pdf_to_string(pdf3)
+    avg3_l = avg3 - z975 * (var3 / N3) ** 0.5
+    avg3_u = avg3 + z975 * (var3 / N3) ** 0.5
+    var3_l = var3 * (1 - z975 * ((exkurt3 + 2) / N3) ** 0.5)
+    var3_u = var3 * (1 + z975 * ((exkurt3 + 2) / N3) ** 0.5)
+    stdev3_l = var3_l ** 0.5 if var3_l >= 0 else 0.0
+    stdev3_u = var3_u ** 0.5
+    t3, var_t3 = t_conf(avg3, var3, skewness3, exkurt3)
+    t3_l = t3 - z975 * (var_t3 / N3) ** 0.5
+    t3_u = t3 + z975 * (var_t3 / N3) ** 0.5
+    nt3 = t3
+    nt3_l = t3_l
+    nt3_u = t3_u
+    nelo3 = nelo_divided_by_nt * nt3
+    nelo3_u = nelo_divided_by_nt * nt3_u
+    nelo3_l = nelo_divided_by_nt * nt3_l
+    if has_pentanomial:
+        results5 = run["results"]["pentanomial"]
+        results5_ = fishtest.stats.LLRcalc.regularize(results5)
+        pentanomial_draw_ratio = results5_[2] / float(sum(results5_))
+        N5, pdf5 = fishtest.stats.LLRcalc.results_to_pdf(results5)
+        games5 = 2 * N5
+        avg5, var5, skewness5, exkurt5 = fishtest.stats.LLRcalc.stats_ex(pdf5)
+        var5_per_game = 2 * var5
+        stdev5_per_game = var5_per_game ** 0.5
+        games = games5
+        sigma = stdev5_per_game
+        pdf5_s = pdf_to_string(pdf5)
+        avg5_l = avg5 - z975 * (var5 / N5) ** 0.5
+        avg5_u = avg5 + z975 * (var5 / N5) ** 0.5
+        var5_per_game_l = var5_per_game * (1 - z975 * ((exkurt5 + 2) / N5) ** 0.5)
+        var5_per_game_u = var5_per_game * (1 + z975 * ((exkurt5 + 2) / N5) ** 0.5)
+        stdev5_per_game_l = var5_per_game_l ** 0.5 if var5_per_game_l >= 0 else 0.0
+        stdev5_per_game_u = var5_per_game_u ** 0.5
+        t5, var_t5 = t_conf(avg5, var5, skewness5, exkurt5)
+        t5_l = t5 - z975 * (var_t5 / N5) ** 0.5
+        t5_u = t5 + z975 * (var_t5 / N5) ** 0.5
+        sqrt2 = 2 ** 0.5
+        nt5 = t5 / sqrt2
+        nt5_l = t5_l / sqrt2
+        nt5_u = t5_u / sqrt2
+        nelo5 = nelo_divided_by_nt * nt5
+        nelo5_u = nelo_divided_by_nt * nt5_u
+        nelo5_l = nelo_divided_by_nt * nt5_l
+        results5_DD_prob = draw_ratio - (results5_[1] + results5_[3]) / (2 * float(N5))
+        results5_WL_prob = results5_[2] / float(N5) - results5_DD_prob
+        R3_ = copy.deepcopy(run["results"])
+        del R3_["pentanomial"]
+        ratio = var5_per_game / var3
+        var_diff = var3 - var5_per_game
+        RMS_bias = var_diff ** 0.5 if var_diff >= 0 else 0
+        RMS_bias_elo = fishtest.stats.stat_util.elo(0.5 + RMS_bias)
+
+    drawelo = fishtest.stats.stat_util.draw_elo_calc(results3_)
+    if has_sprt:
+        elo_model = run["args"]["sprt"].get("elo_model", "BayesElo")
+        alpha = run["args"]["sprt"]["alpha"]
+        beta = run["args"]["sprt"]["beta"]
+        elo0 = run["args"]["sprt"]["elo0"]
+        elo1 = run["args"]["sprt"]["elo1"]
+        batch_size_units = run["args"]["sprt"].get("batch_size", 1)
+        batch_size_games = 2 * batch_size_units if has_pentanomial else 1
+        o = run["args"]["sprt"].get("overshoot", None)
+        assert elo_model in ["BayesElo", "logistic", "normalized"]
+        belo0, belo1 = None, None
+        if elo_model == "BayesElo":
+            belo0, belo1 = elo0, elo1
+            elo0_, elo1_ = [
+                fishtest.stats.stat_util.bayeselo_to_elo(belo_, drawelo)
+                for belo_ in (belo0, belo1)
+            ]
+            elo_model_ = "logistic"
+        else:
+            elo0_, elo1_ = elo0, elo1
+            elo_model_ = elo_model
+
+        assert elo_model_ in ["logistic", "normalized"]
+        if elo_model_ == "logistic":
+            lelo03, lelo13 = lelo0, lelo1 = elo0_, elo1_
+            score03, score13 = score0, score1 = [
+                fishtest.stats.stat_util.L(lelo_) for lelo_ in (lelo0, lelo1)
+            ]
+            nelo0, nelo1 = [
+                nelo_divided_by_nt * (score_ - 0.5) / sigma for score_ in (score0, score1)
+            ]
+            nelo03, nelo13 = [
+                nelo_divided_by_nt * (score_ - 0.5) / stdev3 for score_ in (score0, score1)
+            ]
+        else:  ## normalized
+            nelo03, nelo13 = nelo0, nelo1 = elo0_, elo1_
+            score0, score1 = [
+                nelo_ / nelo_divided_by_nt * sigma + 0.5 for nelo_ in (nelo0, nelo1)
+            ]
+            score03, score13 = [
+                nelo_ / nelo_divided_by_nt * stdev3 + 0.5 for nelo_ in (nelo03, nelo13)
+            ]
+            lelo0, lelo1 = [
+                fishtest.stats.stat_util.elo(score_) for score_ in (score0, score1)
+            ]
+            lelo03, lelo13 = [
+                fishtest.stats.stat_util.elo(score_) for score_ in (score03, score13)
+            ]
+
+        if belo0 is None:
+            belo0, belo1 = [
+                fishtest.stats.stat_util.elo_to_bayeselo(lelo_, draw_ratio)[0]
+                for lelo_ in (lelo03, lelo13)
+            ]
+        LLRjumps3 = list_to_string(
+            [i[0] for i in fishtest.stats.LLRcalc.LLRjumps(pdf3, score0, score1)]
+        )
+        sp = fishtest.stats.sprt.sprt(alpha=alpha, beta=beta, elo0=lelo0, elo1=lelo1)
+        sp.set_state(results3_)
+        a3 = sp.analytics()
+        LLR3_l = a3["a"]
+        LLR3_u = a3["b"]
+        if elo_model_ == "logistic":
+            LLR3 = fishtest.stats.LLRcalc.LLR_logistic(lelo03, lelo13, results3_)
+        else:  # normalized
+            LLR3 = fishtest.stats.LLRcalc.LLR_normalized(nelo03, nelo13, results3_)
+
+        elo3_l = a3["ci"][0]
+        elo3_u = a3["ci"][1]
+        elo3 = a3["elo"]
+        LOS3 = a3["LOS"]
+        # auxilliary
+        LLR3_exact = N3 * fishtest.stats.LLRcalc.LLR(pdf3, score03, score13)
+        LLR3_alt = N3 * fishtest.stats.LLRcalc.LLR_alt(pdf3, score03, score13)
+        LLR3_alt2 = N3 * fishtest.stats.LLRcalc.LLR_alt2(pdf3, score03, score13)
+        LLR3_normalized = fishtest.stats.LLRcalc.LLR_normalized(nelo03, nelo13, results3_)
+        LLR3_normalized_alt = fishtest.stats.LLRcalc.LLR_normalized_alt(
+            nelo03, nelo13, results3_
+        )
+        LLR3_be = fishtest.stats.stat_util.LLRlegacy(belo0, belo1, results3_)
+        if has_pentanomial:
+            LLRjumps5 = list_to_string(
+                [i[0] for i in fishtest.stats.LLRcalc.LLRjumps(pdf5, score0, score1)]
+            )
+            sp = fishtest.stats.sprt.sprt(alpha=alpha, beta=beta, elo0=lelo0, elo1=lelo1)
+            sp.set_state(results5_)
+            a5 = sp.analytics()
+            LLR5_l = a5["a"]
+            LLR5_u = a5["b"]
+            if elo_model_ == "logistic":
+                LLR5 = fishtest.stats.LLRcalc.LLR_logistic(lelo0, lelo1, results5_)
+            else:  # normalized
+                LLR5 = fishtest.stats.LLRcalc.LLR_normalized(nelo0, nelo1, results5_)
+
+            o0 = 0
+            o1 = 0
+            if o is not None:
+                o0 = -o["sq0"] / o["m0"] / 2 if o["m0"] != 0 else 0
+                o1 = o["sq1"] / o["m1"] / 2 if o["m1"] != 0 else 0
+
+            elo5_l = a5["ci"][0]
+            elo5_u = a5["ci"][1]
+            elo5 = a5["elo"]
+            LOS5 = a5["LOS"]
+            # auxilliary
+            LLR5_exact = N5 * fishtest.stats.LLRcalc.LLR(pdf5, score0, score1)
+            LLR5_alt = N5 * fishtest.stats.LLRcalc.LLR_alt(pdf5, score0, score1)
+            LLR5_alt2 = N5 * fishtest.stats.LLRcalc.LLR_alt2(pdf5, score0, score1)
+            LLR5_normalized = fishtest.stats.LLRcalc.LLR_normalized(nelo0, nelo1, results5_)
+            LLR5_normalized_alt = fishtest.stats.LLRcalc.LLR_normalized_alt(
+                nelo0, nelo1, results5_
+            )
+    else:  # assume fixed length test
+        elo3, elo95_3, LOS3 = fishtest.stats.stat_util.get_elo(results3_)
+        elo3_l = elo3 - elo95_3
+        elo3_u = elo3 + elo95_3
+        if has_pentanomial:
+            elo5, elo95_5, LOS5 = fishtest.stats.stat_util.get_elo(results5_)
+            elo5_l = elo5 - elo95_5
+            elo5_u = elo5 + elo95_5
+
+    stats = {
+        "run": run,
+        "page_title": get_page_title(run),
+        "has_spsa": has_spsa,
+        "has_sprt": has_sprt,
+        "has_pentanomial": has_pentanomial,
+        "alpha": alpha,
+        "beta": beta,
+        "elo_model": elo_model,
+        "elo0": elo0,
+        "elo1": elo1,
+        "batch_size_games": batch_size_games,
+        "draw_ratio": draw_ratio,
+        "pentanomial_draw_ratio": pentanomial_draw_ratio,
+        "drawelo": drawelo,
+        "lelo0": lelo0,
+        "nelo0": nelo0,
+        "belo0": belo0,
+        "score0": score0,
+        "lelo1": lelo1,
+        "nelo1": nelo1,
+        "belo1": belo1,
+        "score1": score1,
+        "elo5": elo5,
+        "elo5_l": elo5_l,
+        "elo5_u": elo5_u,
+        "LOS5": LOS5,
+        "LLR5": LLR5,
+        "LLR5_l": LLR5_l,
+        "LLR5_u": LLR5_u,
+        "LLR5_exact": LLR5_exact,
+        "LLR5_alt": LLR5_alt,
+        "LLR5_alt2": LLR5_alt2,
+        "LLR5_normalized": LLR5_normalized,
+        "LLR5_normalized_alt": LLR5_normalized_alt,
+        "games5": games5,
+        "results5": results5,
+        "pdf5_s": pdf5_s,
+        "results5_DD_prob": results5_DD_prob,
+        "results5_WL_prob": results5_WL_prob,
+        "avg5": avg5,
+        "var3": var3,
+        "var3_l": var3_l,
+        "var3_u": var3_u,
+        "var5": var5,
+        "skewness5": skewness5,
+        "exkurt5": exkurt5,
+        "avg5_l": avg5_l,
+        "avg5_u": avg5_u,
+        "var5_per_game": var5_per_game,
+        "var5_per_game_l": var5_per_game_l,
+        "var5_per_game_u": var5_per_game_u,
+        "stdev5_per_game": stdev5_per_game,
+        "stdev5_per_game_l": stdev5_per_game_l,
+        "stdev5_per_game_u": stdev5_per_game_u,
+        "nelo5": nelo5,
+        "nelo5_l": nelo5_l,
+        "nelo5_u": nelo5_u,
+        "LLRjumps5": LLRjumps5,
+        "o0": o0,
+        "o1": o1,
+        "elo3": elo3,
+        "elo3_l": elo3_l,
+        "elo3_u": elo3_u,
+        "LOS3": LOS3,
+        "LLR3": LLR3,
+        "LLR3_l": LLR3_l,
+        "LLR3_u": LLR3_u,
+        "LLR3_exact": LLR3_exact,
+        "LLR3_alt": LLR3_alt,
+        "LLR3_alt2": LLR3_alt2,
+        "LLR3_normalized": LLR3_normalized,
+        "LLR3_normalized_alt": LLR3_normalized_alt,
+        "LLR3_be": LLR3_be,
+        "games3": games3,
+        "results3": results3,
+        "pdf3_s": pdf3_s,
+        "avg3": avg3,
+        "skewness3": skewness3,
+        "exkurt3": exkurt3,
+        "avg3_l": avg3_l,
+        "avg3_u": avg3_u,
+        "var5_per_game": var5_per_game,
+        "var5_per_game_l": var5_per_game_l,
+        "var5_per_game_u": var5_per_game_u,
+        "stdev3": stdev3,
+        "stdev3_l": stdev3_l,
+        "stdev3_u": stdev3_u,
+        "nelo3": nelo3,
+        "nelo3_l": nelo3_l,
+        "nelo3_u": nelo3_u,
+        "LLRjumps3": LLRjumps3,
+        "ratio": ratio,
+        "var_diff": var_diff,
+        "RMS_bias": RMS_bias,
+        "RMS_bias_elo": RMS_bias_elo
+    }
+
+    # Ensure all values in the dictionary are JSON serializable
+    stats = json.loads(json.dumps(stats, cls=CustomJSONEncoder, default=str))
+
+    return stats
+
+@view_config(route_name="api_tests_tasks", renderer="json")
 def tests_tasks(request):
     r_id = request.matchdict["id"]
     run = request.rundb.runs.find_one(
@@ -1334,19 +1728,45 @@ def tests_tasks(request):
     if show_task >= len(run["tasks"]) or show_task < -1:
         show_task = -1
 
-    return {
+    tasks = {
         "run": run,
         "approver": request.has_permission("approve_run"),
         "show_task": show_task,
     }
+    # Ensure all values in the dictionary are JSON serializable
+    tasks = json.loads(json.dumps(tasks, cls=CustomJSONEncoder, default=str))
+
+    return tasks
 
 
-@view_config(route_name="tests_machines", http_cache=10, renderer="machines.mak")
-def tests_machines(request):
-    return {"machines_list": request.rundb.get_machines()}
+@view_config(route_name="api_machines", http_cache=10, renderer="json")
+def machines(request):
+    active_runs = request.rundb.runs.find({"finished": False}, {"tasks": 1, "args": 1})
+
+    machines = []
+    for run in active_runs:
+        for task_id, task in enumerate(reversed(run["tasks"])):
+            if task["active"]:
+                machine = {
+                    "last_updated": (
+                        task["last_updated"].isoformat()
+                        if task.get("last_updated")
+                        else None
+                    ),
+                    "run": run,
+                    "task_id": task_id,
+                    "worker_info": task["worker_info"],
+                }
+                machines.append(machine)
+                break  # break after finding the first active task
+
+    # Ensure all values in the dictionary are JSON serializable
+    machines = json.loads(json.dumps(machines, cls=CustomJSONEncoder, default=str))
+
+    return machines
 
 
-@view_config(route_name="tests_view", renderer="tests_view.mak")
+@view_config(route_name="api_tests_view", renderer="json")
 def tests_view(request):
     run = request.rundb.get_run(request.matchdict["id"])
     if run is None:
@@ -1483,7 +1903,7 @@ def tests_view(request):
 
     same_user = is_same_user(request, run)
 
-    return {
+    ret = {
         "run": run,
         "run_args": run_args,
         "page_title": get_page_title(run),
@@ -1498,6 +1918,8 @@ def tests_view(request):
         "can_modify_run": can_modify_run(request, run),
         "same_user": same_user,
     }
+    ret = json.loads(json.dumps(ret, cls=CustomJSONEncoder, default=str))
+    return ret
 
 
 def get_paginated_finished_runs(request):
@@ -1599,7 +2021,7 @@ last_time = 0
 building = threading.Semaphore()
 
 
-@view_config(route_name="tests", renderer="tests.mak")
+@view_config(route_name="api_tests", renderer="json")
 def tests(request):
     request.response.headerlist.extend(
         (
@@ -1626,6 +2048,7 @@ def tests(request):
             # Not cached, so calculate and fetch homepage results
             try:
                 last_tests = homepage_results(request)
+                process_results_info(last_tests)
             except Exception as e:
                 print("Overview exception: " + str(e))
                 if not last_tests:
@@ -1634,7 +2057,10 @@ def tests(request):
                 last_time = time.time()
                 building.release()
 
-    return {
+    ret = {
         **last_tests,
         "machines_shown": request.cookies.get("machines_state") == "Hide",
     }
+
+    ret = json.loads(json.dumps(ret, cls=CustomJSONEncoder, default=str))
+    return ret

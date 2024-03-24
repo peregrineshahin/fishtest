@@ -4,8 +4,10 @@
 .python-version
 env/
 venv/
+node_modules/
 worker/api.log*
 worker/fish.exit
+worker/packages
 worker/fishtest.cfg
 worker/_testing_*
 worker/testing

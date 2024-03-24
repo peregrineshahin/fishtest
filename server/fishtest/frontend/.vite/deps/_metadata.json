@@ -1,0 +1,46 @@
+{
+  "hash": "39e3a792",
+  "configHash": "7fe09e95",
+  "lockfileHash": "b9bfb89d",
+  "browserHash": "36cbfb6a",
+  "optimized": {
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "49bd829f",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "0ccfdd9e",
+      "needsInterop": true
+    },
+    "react-query": {
+      "src": "../../node_modules/react-query/es/index.js",
+      "file": "react-query.js",
+      "fileHash": "75f594dc",
+      "needsInterop": false
+    },
+    "react-router-dom": {
+      "src": "../../node_modules/react-router-dom/dist/index.js",
+      "file": "react-router-dom.js",
+      "fileHash": "a881fabd",
+      "needsInterop": false
+    },
+    "react-google-charts": {
+      "src": "../../node_modules/react-google-charts/dist/index.js",
+      "file": "react-google-charts.js",
+      "fileHash": "2040eb2a",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-UWZXFKA6": {
+      "file": "chunk-UWZXFKA6.js"
+    },
+    "chunk-UPDK7Z2H": {
+      "file": "chunk-UPDK7Z2H.js"
+    }
+  }
+}

@@ -8,8 +8,24 @@ from pyramid.authorization import ACLAuthorizationPolicy
 from pyramid.config import Configurator
 from pyramid.events import BeforeRender, NewRequest
 from pyramid.session import SignedCookieSessionFactory
+from pyramid.events import NewRequest
+from pyramid.response import Response
 
 from fishtest import helpers
+
+
+def add_cors_headers_response_callback(event):
+    def cors_headers(request, response):
+        response.headers.update(
+            {
+                "Access-Control-Allow-Origin": "*",  # Change * to your allowed origin
+                "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+                "Access-Control-Allow-Headers": "Origin, Content-Type, Accept, Authorization",
+                "Access-Control-Allow-Credentials": "true",
+            }
+        )
+
+    event.request.add_response_callback(cors_headers)
 
 
 def main(global_config, **settings):
@@ -20,6 +36,9 @@ def main(global_config, **settings):
         session_factory=session_factory,
         root_factory="fishtest.models.RootFactory",
     )
+
+    config.add_subscriber(add_cors_headers_response_callback, NewRequest)
+
     config.include("pyramid_mako")
     config.set_default_csrf_options(require_csrf=False)
 
@@ -86,14 +105,9 @@ def main(global_config, **settings):
     config.add_route("sprt_calc", "/sprt_calc")
     config.add_route("workers", "/workers/{worker_name}")
 
-    config.add_route("tests", "/tests")
-    config.add_route("tests_machines", "/tests/machines")
     config.add_route("tests_finished", "/tests/finished")
     config.add_route("tests_run", "/tests/run")
-    config.add_route("tests_view", "/tests/view/{id}")
-    config.add_route("tests_tasks", "/tests/tasks/{id}")
     config.add_route("tests_user", "/tests/user/{username}")
-    config.add_route("tests_stats", "/tests/stats/{id}")
     config.add_route("tests_live_elo", "/tests/live_elo/{id}")
 
     # Tests - actions
@@ -104,6 +118,11 @@ def main(global_config, **settings):
     config.add_route("tests_purge", "/tests/purge")
 
     # API
+    config.add_route("api_tests", "/api/tests")
+    config.add_route("api_tests_view", "api/tests/view/{id}")
+    config.add_route("api_tests_tasks", "api/tests/tasks/{id}")
+    config.add_route("api_machines", "/api/machines")
+    config.add_route("api_tests_stats", "api/tests/stats/{id}")
     config.add_route("api_request_task", "/api/request_task")
     config.add_route("api_update_task", "/api/update_task")
     config.add_route("api_failed_task", "/api/failed_task")
