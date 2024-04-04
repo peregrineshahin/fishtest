@@ -1084,6 +1084,23 @@ def launch_cutechess(
         w_params = []
         b_params = []
 
+
+    def generate_option_strings(params):
+    option_strings = []
+    for param in params:
+        rounded_value = math.floor(param["value"] + random.uniform(0, 1))
+        option_strings.append("{}={}".format(param["name"], rounded_value))
+    return option_strings
+
+    # Generate option strings for white and black parameters
+    white_options = generate_option_strings(w_params)
+    black_options = generate_option_strings(b_params)
+
+    # Write option names and values to a file
+    with open("options.txt", "w") as f:
+        for white_opt, black_opt in zip(white_options, black_options):
+            f.write(white_opt + ", " + black_opt + "\n")
+
     # Run cutechess-cli binary.
     # Stochastic rounding and probability for float N.p: (N, 1-p); (N+1, p)
     idx = cmd.index("_spsa_")
@@ -1388,7 +1405,7 @@ def run_games(worker_info, password, remote, run, task_id, pgn_file, clear_binar
         raise RunException("\n".join(run_errors))
 
     if base_nps < 208082 / (1 + math.tanh((worker_concurrency - 1) / 8)):
-        raise WorkerException(
+        raise FatalException(
             "This machine is too slow ({} nps / thread) to run fishtest effectively - sorry!".format(
                 base_nps
             )
