@@ -617,14 +617,19 @@
       try {
         const response = await fetch(url);
         if (!response.ok) {
-          throw new Error(
-            "Failed to fetch " + url + ": " + response.status + " " + response.statusText
-          );
+          if (response.status === 404) {
+            return "";
+          } else {
+            throw new Error(
+             "Failed to fetch " + url + ": " + response.status + " " + response.statusText
+            );
+          }
         }
         return await response.text();
       } catch (error) {
-        console.log("File may have been deleted, error fetching file from URL "+ url + ":", error);
-        return "";
+          throw new Error(
+            "Failed to fetch file: " + error;
+          );
       }
     }
 
@@ -633,9 +638,7 @@
         const url = apiUrl + "/git/trees/" + branch + "?recursive=1";
         const response = await fetch(url);
         if (!response.ok) {
-          throw new Error(
-            "Failed to fetch files in branch " + branch + ": " + response.status + " " + response.statusText
-          );
+            return null;
         }
         const data = await response.json();
         return data.tree
@@ -643,7 +646,7 @@
           .map((entry) => entry.path);
       } catch (error) {
         console.error("Error fetching files in branch " +  branch + ": ", error);
-        return [];
+        return null;
       }
     }
 
@@ -669,6 +672,8 @@
         ]);
 
         const allFiles = Array.from(new Set([...files1, ...files2]));
+        if (allFiles.includes(null))
+            return;
         let diffs = await Promise.all(
           allFiles.map(async (filePath) => {
             const [content1, content2] = await Promise.all([
@@ -744,8 +749,11 @@
         diffs = await fetchDiffTwoDots(rawContentUrl, apiUrl, diffBase, diffNew);
       else
         diffs = await fetchDiffThreeDots(diffApiUrl);
-      text = diffs.text;
-      count = diffs.count;
+
+      if (diff.text && diff.count) {
+        text = diffs.text;
+        count = diffs.count;
+      }
     }
     if (text) {
       showDiff(text, count);
