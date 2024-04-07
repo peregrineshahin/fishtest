@@ -367,7 +367,7 @@ class ApiView(object):
             },  # Match tasks with worker_name(worker_info) equal to worker_name_param
         ]
 
-        result = self.request.rundb.rundb.runs.aggregate(pipeline)
+        result = self.request.rundb.runs.aggregate(pipeline)
 
         tasks = [doc["tasks"] for doc in result]
 
