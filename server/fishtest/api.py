@@ -341,6 +341,38 @@ class ApiView(object):
                 task["residual"] = "inf"
         return task
 
+    @view_config(route_name="api_tasks_worker")
+    def tasks_worker(self):
+        worker_name_param = self.request.matchdict["worker_name"]
+        pipeline = [
+            {
+                "$match": {"tasks.worker_info": {"$exists": True}}
+            },  # Filter only documents with tasks containing worker_info
+            {"$project": {"_id": 0, "tasks": 1}},  # Project only the tasks array
+            {"$unwind": "$tasks"},  # Unwind tasks array
+            {
+                "$match": {
+                    "$expr": {
+                        "$eq": [
+                            {
+                                "$function": {
+                                    "body": "function(worker_info) { return worker_name(worker_info); }",
+                                    "args": ["$tasks.worker_info"],
+                                }
+                            },
+                            worker_name_param,
+                        ]
+                    }
+                }
+            },  # Match tasks with worker_name(worker_info) equal to worker_name_param
+        ]
+
+        result = self.request.rundb.rundb.runs.aggregate(pipeline)
+
+        tasks = [doc["tasks"] for doc in result]
+
+        return {"tasks": tasks}
+
     @view_config(route_name="api_get_elo")
     def get_elo(self):
         run = self.request.rundb.get_run(self.request.matchdict["id"])

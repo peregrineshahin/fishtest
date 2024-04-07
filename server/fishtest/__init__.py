@@ -115,6 +115,7 @@ def main(global_config, **settings):
     config.add_route("api_finished_runs", "/api/finished_runs")
     config.add_route("api_get_run", "/api/get_run/{id}")
     config.add_route("api_get_task", "/api/get_task/{id}/{task_id}")
+    config.add_route("api_tasks_worker", "/api/tasks_worker/{worker_name}")
     config.add_route("api_upload_pgn", "/api/upload_pgn")
     config.add_route("api_download_pgn", "/api/pgn/{id}")
     config.add_route("api_download_run_pgns", "/api/run_pgns/{id}")
