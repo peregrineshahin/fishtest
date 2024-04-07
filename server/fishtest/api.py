@@ -350,21 +350,6 @@ class ApiView(object):
             },  # Filter only documents with tasks containing worker_info
             {"$project": {"_id": 0, "tasks": 1}},  # Project only the tasks array
             {"$unwind": "$tasks"},  # Unwind tasks array
-            {
-                "$match": {
-                    "$expr": {
-                        "$eq": [
-                            {
-                                "$function": {
-                                    "body": "function(worker_info) { return worker_name(worker_info); }",
-                                    "args": ["$tasks.worker_info"],
-                                }
-                            },
-                            worker_name_param,
-                        ]
-                    }
-                }
-            },  # Match tasks with worker_name(worker_info) equal to worker_name_param
         ]
 
         result = self.request.rundb.runs.aggregate(pipeline)
