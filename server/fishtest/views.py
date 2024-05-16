@@ -367,41 +367,7 @@ def signup(request):
     strong_password, password_err = password_strength(
         signup_password, signup_username, signup_email
     )
-    if not strong_password:
-        errors.append("Error! Weak password: " + password_err)
-    if signup_password != signup_password_verify:
-        errors.append("Error! Matching verify password required")
     email_is_valid, validated_email = email_valid(signup_email)
-    if not email_is_valid:
-        errors.append("Error! Invalid email: " + validated_email)
-    if len(signup_username) == 0:
-        errors.append("Error! Username required")
-    if not signup_username.isalnum():
-        errors.append("Error! Alphanumeric username required")
-    if errors:
-        for error in errors:
-            request.session.flash(error, "error")
-        return {}
-
-    path = os.path.expanduser("~/fishtest.captcha.secret")
-    if os.path.exists(path):
-        with open(path, "r") as f:
-            secret = f.read()
-            payload = {
-                "secret": secret,
-                "response": request.POST.get("g-recaptcha-response", ""),
-                "remoteip": request.remote_addr,
-            }
-            response = requests.post(
-                "https://www.google.com/recaptcha/api/siteverify",
-                data=payload,
-                timeout=HTTP_TIMEOUT,
-            ).json()
-            if "success" not in response or not response["success"]:
-                if "error-codes" in response:
-                    print(response["error-codes"])
-                request.session.flash("Captcha failed", "error")
-                return {}
 
     result = request.userdb.create_user(
         username=signup_username, password=signup_password, email=validated_email
