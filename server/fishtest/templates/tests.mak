@@ -6,6 +6,7 @@
   integrity="sha384-${cache_busters['css/flags.css']}"
   crossorigin="anonymous"
 >
+<script src="https://www.gstatic.com/charts/loader.js"></script>
 
 <h2>Stockfish Testing Queue</h2>
 
@@ -66,14 +67,33 @@
       const machinesBody = document.getElementById("machines");
       try {
         const html = await fetchText("/tests/machines");
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = html;
+
+        // Extract and remove scripts from the tempDiv
+        const scripts = tempDiv.querySelectorAll('script');
+        const scriptContents = [];
+        scripts.forEach(script => {
+            scriptContents.push(script.textContent);
+            script.remove();
+        });
+
+        // Execute inline scripts
+        scriptContents.forEach(scriptContent => {
+            const newScript = document.createElement('script');
+            newScript.text = scriptContent;
+            document.body.appendChild(newScript);
+        });
         machines.replaceChildren();
         machines.insertAdjacentHTML("beforeend", html);
         const machinesTbody = document.querySelector("#machines tbody");
         let newMachinesCount = machinesTbody?.childElementCount;
 
         if (newMachinesCount === 1) {
-          const noMachines = machinesTbody.getElementById("no-machines");
-          if (noMachines) newMachinesCount = 0;
+          const noMachines = document.getElementById("no-machines");
+          if (noMachines) {
+            newMachinesCount = 0;
+          }
         }
 
         const countSpan = document.getElementById("workers-count");

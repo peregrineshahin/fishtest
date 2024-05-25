@@ -10,6 +10,45 @@
           return text
 %>
 
+
+<script>
+  google.charts.load('current', {packages: ['corechart', 'bar']});
+  google.charts.setOnLoadCallback(drawBasic);
+
+  function drawBasic() {
+    debugger;
+    const data = google.visualization.arrayToDataTable([
+      ['Machine', 'Workers'],
+      ['xuhdev', 1],
+      ['wizardassassin', 1],
+      ['vidar808', 30],
+      ['TueRens', 56],
+      ['tolkki963', 2],
+      ['teenychess', 1],
+      ['technologov', 32],
+      ['technologov', 16]
+    ]);
+
+    const options = {
+      title: 'Number of Workers per Machine',
+      chartArea: {width: '50%'},
+      hAxis: {
+        title: 'Total Workers',
+        minValue: 0
+      },
+      vAxis: {
+        title: 'Machine'
+      }
+    };
+
+    const chart = new google.visualization.BarChart(document.getElementById('chart_div'));
+
+    chart.draw(data, options);
+  }
+</script>
+
+<div id="chart_div" style="width: 900px; height: 500px;"></div>
+
 <table class="table table-striped table-sm">
   <thead class="sticky-top">
     <tr>
