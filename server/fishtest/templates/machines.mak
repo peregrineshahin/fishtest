@@ -16,7 +16,6 @@
   google.charts.setOnLoadCallback(drawBasic);
 
   function drawBasic() {
-    debugger;
     const data = google.visualization.arrayToDataTable([
       ['Machine', 'Workers'],
       ['xuhdev', 1],
@@ -33,13 +32,18 @@
       title: 'Number of Workers per Machine',
       chartArea: {width: '50%'},
       hAxis: {
-        title: 'Total Workers',
-        minValue: 0
+          title: 'Total Workers',
+          minValue: 0,
+          textStyle: { color: 'inherit' },
+          titleTextStyle: { color: 'inherit' }
       },
       vAxis: {
-        title: 'Machine'
+          title: 'Machine',
+          textStyle: { color: 'inherit' },
+          titleTextStyle: { color: 'inherit' }
       },
-      backgroundColor: { fill:'transparent' }
+      titleTextStyle: { color: 'inherit' },
+      backgroundColor: { fill: 'transparent' }
     };
 
     const chart = new google.visualization.BarChart(document.getElementById('chart_div'));
