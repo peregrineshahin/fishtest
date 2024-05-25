@@ -38,7 +38,8 @@
       },
       vAxis: {
         title: 'Machine'
-      }
+      },
+      backgroundColor: { fill:'transparent' }
     };
 
     const chart = new google.visualization.BarChart(document.getElementById('chart_div'));
