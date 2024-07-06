@@ -844,6 +844,65 @@ class RunDb:
         )
         return machines
 
+    def get_grouped_summaries(self, group_by="username"):
+        active_runs = self.runs.find({"finished": False}, {"tasks": 1, "args": 1})
+        items_summary = {}
+
+        for run in active_runs:
+            for task_id, task in enumerate(run["tasks"]):
+                if task["active"]:
+                    machine = task["worker_info"]
+                    group_key = machine.get(group_by, "Unknown")
+                    if group_key not in items_summary:
+                        items_summary[group_key] = {
+                            "group_key": group_key,
+                            "cores": 0,
+                            "machines": 0,
+                            "last_updated": machine["last_updated"],
+                        }
+                    items_summary[group_key]["cores"] += machine["concurrency"]
+                    items_summary[group_key]["machines"] += 1
+                    if (
+                        machine["last_updated"]
+                        > items_summary[group_key]["last_updated"]
+                    ):
+                        items_summary[group_key]["last_updated"] = machine[
+                            "last_updated"
+                        ]
+                    break
+
+        return list(items_summary.values())
+
+    def get_machines_by_group(self, group_by, group_key):
+        active_runs = self.runs.find({"finished": False}, {"tasks": 1, "args": 1})
+        machines = []
+
+        for run in active_runs:
+            for task_id, task in enumerate(run["tasks"]):
+                if task["active"]:
+                    machine = task["worker_info"]
+                    if machine.get(group_by) == group_key:
+                        machine_info = {
+                            "username": machine["username"],
+                            "concurrency": machine["concurrency"],
+                            "unique_key": machine["unique_key"],
+                            "nps": machine["nps"],
+                            "max_memory": machine["max_memory"],
+                            "uname": machine["uname"],
+                            "gcc_version": machine["gcc_version"],
+                            "compiler": machine.get("compiler", "g++"),
+                            "python_version": machine["python_version"],
+                            "version": machine["version"],
+                            "modified": machine["modified"],
+                            "last_updated": machine["last_updated"],
+                            "run": run,
+                            "task_id": task_id,
+                        }
+                        machines.append(machine_info)
+                    break
+
+        return machines
+
     def aggregate_unfinished_runs(self, username=None):
         unfinished_runs = self.get_unfinished_runs(username=username)
         runs = {"pending": [], "active": []}

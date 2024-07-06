@@ -1476,9 +1476,19 @@ def tests_tasks(request):
     }
 
 
+@view_config(route_name="tests_machines_group", http_cache=10, renderer="machines_grouped.mak")
+def tests_machines_group(request):
+    group_by = request.params.get("group_by", "username")
+    items_summary = request.rundb.get_grouped_summaries(group_by)
+    return {"items_summary": items_summary, "group_by": group_by}
+
+
 @view_config(route_name="tests_machines", http_cache=10, renderer="machines.mak")
 def tests_machines(request):
-    return {"machines_list": request.rundb.get_machines()}
+    group_by = request.params.get("group_by", "username")
+    group_key = request.params.get("group_key", "")
+    items_summary = request.rundb.get_machines_by_group(group_by, group_key)
+    return {"items_summary": items_summary, "group_by": group_by}
 
 
 @view_config(route_name="tests_view", renderer="tests_view.mak")

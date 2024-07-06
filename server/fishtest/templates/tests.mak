@@ -65,6 +65,97 @@
           await renderMachines();
       }
 
+    function handleMachinesGrouping() {
+      document.querySelectorAll('.group-row').forEach(function(row) {
+        row.addEventListener('click', function() {
+          let groupKey = this.dataset.groupKey;
+          let groupBy = this.dataset.groupBy;
+          fetchText('/tests/machines_grouped/' + groupBy)
+            .then(response => response.json())
+            .then(data => {
+              
+              toggleView('details');
+            })
+            .catch(error => console.error('Error fetching group details:', error));
+        });
+      });
+
+      document.getElementById('back-button').addEventListener('click', function () {
+        toggleView('summary');
+      });
+
+      document.getElementById('group-by-select').addEventListener('change', function () {
+        debugger;
+        let groupBy = this.value;
+        fetchText('/tests/machines_grouped/' + groupBy)
+          .then(data => {
+            debugger;
+          })
+          .catch(error => console.error('Error fetching machines group:', error));
+      });
+      
+      function updateSummaryView(items_summary, groupBy) {
+        let tbody = document.getElementById('summary-tbody');
+        tbody.innerHTML = ''; // Clear the current contents
+
+        if (!items_summary.length) {
+          let noItemsRow = document.createElement('tr');
+          noItemsRow.id = 'no-items';
+          let noItemsCell = document.createElement('td');
+          noItemsCell.colSpan = 4;
+          noItemsCell.textContent = 'No items found';
+          noItemsRow.appendChild(noItemsCell);
+          tbody.appendChild(noItemsRow);
+          return;
+        }
+
+        items_summary.forEach(item => {
+          let row = document.createElement('tr');
+          row.className = 'group-row';
+          row.dataset.groupKey = item.group_key;
+          row.dataset.groupBy = groupBy;
+
+          let cells = [
+            item.group_key,
+            item.cores,
+            item.machines,
+          ];
+
+          cells.forEach(cellContent => {
+            let td = document.createElement('td');
+            td.textContent = cellContent;
+            row.appendChild(td);
+          });
+
+          row.addEventListener('click', function() {
+            let groupKey = this.dataset.groupKey;
+            let groupBy = this.dataset.groupBy;
+            fetch('/tests/machines_grouped' + groupBy + '/' + encodeURIComponent(groupKey))
+              .then(response => response.json())
+              .then(data => {
+                toggleView('details');
+              })
+              .catch(error => console.error('Error fetching group details:', error));
+          });
+
+          tbody.appendChild(row);
+        });
+      }
+
+      function toggleView(view) {
+        const summaryView = document.getElementById('summary-view');
+        const detailsView = document.getElementById('details-view');
+
+        if (view === 'details') {
+          summaryView.style.display = 'none';
+          detailsView.style.display = 'block';
+        } else {
+          summaryView.style.display = 'block';
+          detailsView.style.display = 'none';
+        }
+      }
+    };
+
     async function renderMachines() {
       await DOMContentLoaded();
       if (fetchedMachinesBefore) {
@@ -74,9 +165,10 @@
         if (document.querySelector("#machines .retry")) {
           machinesBody.replaceChildren(machinesSkeleton);
         }
-        const html = await fetchText("/tests/machines");
+        const html = await fetchText("/tests/machines_grouped/username");
         machinesBody.replaceChildren();
         machinesBody.insertAdjacentHTML("beforeend", html);
+        handleMachinesGrouping();
         const machinesTbody = document.querySelector("#machines tbody");
         let newMachinesCount = machinesTbody?.childElementCount;
 
