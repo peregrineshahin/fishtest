@@ -105,7 +105,14 @@ worker_schema = {
     "_id?": ObjectId,
     "worker_name": short_worker_name,
     "blocked": bool,
-    "message": worker_message,
+    "message?": worker_message,  # old field, todo: remove this field from db if exists
+    "notes": intersect(
+        [
+            {"time": datetime_utc, "username": username, "message": worker_message},
+            ...,
+        ],
+        size(0, 100), # new field, todo: add this field to db if it doesn't exists
+    ),
     "last_updated": datetime_utc,
 }
 
