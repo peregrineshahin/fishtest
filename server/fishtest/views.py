@@ -1478,7 +1478,7 @@ def tests_tasks(request):
 
 @view_config(route_name="tests_machines", http_cache=10, renderer="machines.mak")
 def tests_machines(request):
-    sleep(40000)
+    time.sleep(40000)
     return {"machines_list": request.rundb.get_machines()}
 
 
