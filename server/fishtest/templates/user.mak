@@ -238,6 +238,7 @@
       >Save</button>
       <button
         id="delete_account_btn"
+        type="button"
         class="btn btn-danger w-100"
         data-bs-toggle="modal"
         data-bs-target="#delete_account_modal"
