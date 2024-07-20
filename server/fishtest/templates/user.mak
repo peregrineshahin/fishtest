@@ -17,7 +17,26 @@
           e.target.submit();
       });
     }
+    
+    async function handleDeleteAccount() {
+      await DOMContentLoaded();
+      document.getElementById("password").addEventListener("input", (e) => {
+        const value = e.target.value;
+        const deleteAccBtn = document.getElementById("delete_account_btn");
+        const saveBtn = document.getElementById("save_btn");
+        
+        if (value) {
+          deleteAccBtn.removeAttribute("disabled");
+          saveBtn.removeAttribute("disabled");
+        } else {
+          deleteAccBtn.setAttribute("disabled", "");
+          saveBtn.setAttribute("disabled", "");
+        }
+      });
+    }
+
     handleGitHubToken();
+    handleDeleteAccount();
   </script>
 % else:
   <script>
@@ -211,7 +230,39 @@
           </div>
         </div>
       </div>
-      <button type="submit" class="btn btn-primary w-100">Save</button>
+      <button
+        id="save_btn"
+        type="submit"
+        class="btn btn-primary w-100 mb-2"
+        disabled
+      >Save</button>
+      <button
+        id="delete_account_btn"
+        class="btn btn-danger w-100"
+        data-bs-toggle="modal"
+        data-bs-target="#delete_account_modal"
+        disabled
+      >Delete Your Account</button>
+
+      <div id="delete_account_modal" class="modal fade" tabindex="-1" aria-labelledby="delete_account_modal" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Confirmation Required</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <p>Are you sure you want to delete your own account? Please type your username to confirm.</p>
+              <input type="text" name="delete_own_account" class="form-control" placeholder="Enter your username" pattern="${user['username']}">
+              <div class="invalid-feedback">Username does not match. Please try again.</div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary">Confirm</button>
+            </div>
+          </div>
+        </div>
+      </div>
     % elif 'pending' in user and user['pending']:
       <div class="alert alert-dark mb-3">
         <label class="mb-2 h5">User Approval:</label>

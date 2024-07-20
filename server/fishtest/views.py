@@ -613,6 +613,16 @@ def user(request):
     user_data = request.userdb.get_user(user_name)
     if user_data is None:
         raise HTTPNotFound()
+
+    if (
+        profile
+        and "delete_own_account" in request.POST
+        and request.POST["delete_own_account"] == user_name
+    ):
+        removed = request.userdb.remove_user(user_data, rejector=None)
+        if removed:
+            logout(request)
+
     if "user" in request.POST:
         if profile:
             old_password = request.params.get("old_password").strip()

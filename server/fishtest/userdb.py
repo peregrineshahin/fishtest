@@ -137,18 +137,24 @@ class UserDb:
         self.last_blocked_time = 0
         self.clear_cache()
 
-    def remove_user(self, user, rejector):
-
+    def remove_user(self, user, rejector=""):
+        self.user_cache.delete_one({"_id": user["_id"]})
         result = self.users.delete_one({"_id": user["_id"]})
         if result.deleted_count > 0:
             # User successfully deleted
             self.last_pending_time = 0
             self.clear_cache()
             # logs rejected users to the server
-            print(
-                f"user: {user['username']} with email: {user['email']} was rejected by: {rejector}",
-                flush=True,
-            )
+            if rejector:
+                print(
+                    f"user: {user['username']} with email: {user['email']} was rejected by: {rejector}",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"user: {user['username']} with email: {user['email']} deleted their own account",
+                    flush=True,
+                )
             return True
         else:
             # User not found
